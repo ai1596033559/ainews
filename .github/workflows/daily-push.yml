@@ -2,45 +2,50 @@ name: 每日飞书推送
 
 on:
   schedule:
-    # 每天早上 8:00 北京时间 (UTC 00:00)
-    - cron: '0 0 * * *'
-  workflow_dispatch:  # 支持手动触发
+    - cron: '0 0 * * *'   # 08:00 北京时间 - AI 科技新闻
+    - cron: '0 1 * * *'   # 09:00 北京时间 - 中医养生
+    - cron: '0 2 * * *'   # 10:00 北京时间 - 宠物科学
+  workflow_dispatch:
 
 jobs:
-  push:
+  ai-news:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 0 * * *'
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 设置 Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: 安装依赖
-        run: npm install
-
-      - name: 运行 AI 科技新闻
+      - run: npm install
+      - run: node index.js ai
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        run: node index.js ai
 
-      - name: 等待 60 秒
-        run: sleep 60
-
-      - name: 运行 小红书·中医养生
+  tcm-health:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 1 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node index.js tcm
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        run: node index.js tcm
 
-      - name: 等待 60 秒
-        run: sleep 60
-
-      - name: 运行 小红书·宠物科学
+  pet-science:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 2 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node index.js pet
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        run: node index.js pet
