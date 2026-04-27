@@ -2,23 +2,25 @@ const axios = require('axios');
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const FEISHU_WEBHOOK = process.env.FEISHU_WEBHOOK;
+const PUSHPLUS_TOKEN = process.env.PUSHPLUS_TOKEN;
 
-if (!DEEPSEEK_API_KEY || !FEISHU_WEBHOOK) {
-    console.error('❌ 请设置环境变量 DEEPSEEK_API_KEY 和 FEISHU_WEBHOOK');
+if (!DEEPSEEK_API_KEY) {
+    console.error('❌ 请设置环境变量 DEEPSEEK_API_KEY');
     process.exit(1);
 }
 
 const getBJTime = () => new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
 
-async function pushMessage(title, content) {
-    console.log(`[推送] 准备推送: ${title}，内容长度: ${content.length}`);
-
-    const chunks = [];
+async function pushToFeishu(title, content) {
+    if (!FEISHU_WEBHOOK) {
+        console.log('[飞书] 未配置 FEISHU_WEBHOOK，跳过飞书推送');
+        return;
+    }
     const chunkSize = 3000;
+    const chunks = [];
     for (let i = 0; i < content.length; i += chunkSize) {
         chunks.push(content.substring(i, i + chunkSize));
     }
-
     for (let i = 0; i < chunks.length; i++) {
         const chunkTitle = chunks.length > 1 ? `${title} (第${i+1}/${chunks.length}部分)` : title;
         const payload = {
@@ -26,16 +28,39 @@ async function pushMessage(title, content) {
             content: { text: `【${chunkTitle}】\n\n${chunks[i]}` }
         };
         try {
-            console.log(`[推送] 正在发送分段 ${i+1}/${chunks.length} ...`);
+            console.log(`[飞书] 正在发送分段 ${i+1}/${chunks.length} ...`);
             await axios.post(FEISHU_WEBHOOK, payload, { timeout: 30000 });
-            console.log(`✅ [推送] [${chunkTitle}] 发送成功`);
-            if (chunks.length > 1 && i < chunks.length - 1) {
-                await new Promise(r => setTimeout(r, 2000));
-            }
+            console.log(`✅ [飞书] [${chunkTitle}] 发送成功`);
+            if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 2000));
         } catch (e) {
-            console.error(`❌ [推送] [${chunkTitle}] 失败: ${e.message}`);
+            console.error(`❌ [飞书] [${chunkTitle}] 失败: ${e.message}`);
         }
     }
+}
+
+async function pushToWechat(title, content) {
+    if (!PUSHPLUS_TOKEN) {
+        console.log('[PushPlus] 未配置 PUSHPLUS_TOKEN，跳过微信推送');
+        return;
+    }
+    try {
+        console.log(`[PushPlus] 正在推送: ${title}，内容长度: ${content.length}`);
+        await axios.post('http://www.pushplus.plus/send', {
+            token: PUSHPLUS_TOKEN,
+            title: title,
+            content: content,
+            template: 'txt'
+        }, { timeout: 30000 });
+        console.log(`✅ [PushPlus] [${title}] 发送成功`);
+    } catch (e) {
+        console.error(`❌ [PushPlus] [${title}] 失败: ${e.message}`);
+    }
+}
+
+async function pushMessage(title, content) {
+    console.log(`[推送] 准备推送: ${title}，内容长度: ${content.length}`);
+    await pushToFeishu(title, content);
+    await pushToWechat(title, content);
 }
 
 async function callDeepSeek(prompt, retries = 3) {
