@@ -123,26 +123,38 @@ async function runTask(type) {
 
 async function main() {
     const mode = process.argv[2] || 'test';
-    const exitOnError = process.env.EXIT_ON_ERROR !== 'false';
 
     try {
         if (mode === 'test') {
             console.log("--- 启动手动测试模式 ---");
-            await runTask('ai');
-            await new Promise(r => setTimeout(r, 15000));
-            await runTask('tcm');
-            await new Promise(r => setTimeout(r, 15000));
-            await runTask('pet');
+            const tasks = [
+                { type: 'ai', delay: 15000 },
+                { type: 'tcm', delay: 15000 },
+                { type: 'pet', delay: 0 }
+            ];
+            for (const task of tasks) {
+                try {
+                    await runTask(task.type);
+                } catch (e) {
+                    console.error(`❌ [${task.type}] 任务失败: ${e.message}`);
+                }
+                if (task.delay > 0) {
+                    console.log(`等待 ${task.delay/1000} 秒后执行下一个任务...`);
+                    await new Promise(r => setTimeout(r, task.delay));
+                }
+            }
             console.log("--- 手动测试模式结束 ---");
         } else {
-            await runTask(mode);
+            const success = await runTask(mode).then(() => true).catch(e => {
+                console.error(`❌ [${mode}] 任务失败: ${e.message}`);
+                return false;
+            });
+            if (!success) process.exit(1);
         }
     } catch (e) {
         console.error(`❌ 任务执行崩溃: ${e.message}`);
-        if (exitOnError) process.exit(1);
+        process.exit(1);
     }
-
-    if (exitOnError) process.exit(0);
 }
 
 main();
