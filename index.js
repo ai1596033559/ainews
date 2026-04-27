@@ -3,9 +3,12 @@ const axios = require('axios');
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const FEISHU_WEBHOOK = process.env.FEISHU_WEBHOOK;
 const PUSHPLUS_TOKEN = process.env.PUSHPLUS_TOKEN;
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
-if (!DEEPSEEK_API_KEY) {
-    console.error('❌ 请设置环境变量 DEEPSEEK_API_KEY');
+const USE_GITHUB_MODELS = !!GITHUB_TOKEN;
+
+if (!DEEPSEEK_API_KEY && !GITHUB_TOKEN) {
+    console.error('❌ 请设置环境变量 DEEPSEEK_API_KEY 或 GITHUB_TOKEN');
     process.exit(1);
 }
 
@@ -13,7 +16,7 @@ const getBJTime = () => new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
 
 async function pushToFeishu(title, content) {
     if (!FEISHU_WEBHOOK) {
-        console.log('[飞书] 未配置 FEISHU_WEBHOOK，跳过飞书推送');
+        console.log('[飞书] 未配置 FEISHU_WEBHOOK，跳过');
         return;
     }
     const chunkSize = 3000;
@@ -22,15 +25,14 @@ async function pushToFeishu(title, content) {
         chunks.push(content.substring(i, i + chunkSize));
     }
     for (let i = 0; i < chunks.length; i++) {
-        const chunkTitle = chunks.length > 1 ? `${title} (第${i+1}/${chunks.length}部分)` : title;
-        const payload = {
-            msg_type: "text",
-            content: { text: `【${chunkTitle}】\n\n${chunks[i]}` }
-        };
+        const chunkTitle = chunks.length > 1 ? `${title} (${i+1}/${chunks.length})` : title;
         try {
-            console.log(`[飞书] 正在发送分段 ${i+1}/${chunks.length} ...`);
-            await axios.post(FEISHU_WEBHOOK, payload, { timeout: 30000 });
-            console.log(`✅ [飞书] [${chunkTitle}] 发送成功`);
+            console.log(`[飞书] 发送 ${i+1}/${chunks.length} ...`);
+            await axios.post(FEISHU_WEBHOOK, {
+                msg_type: "text",
+                content: { text: `【${chunkTitle}】\n\n${chunks[i]}` }
+            }, { timeout: 30000 });
+            console.log(`✅ [飞书] [${chunkTitle}] 成功`);
             if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 2000));
         } catch (e) {
             console.error(`❌ [飞书] [${chunkTitle}] 失败: ${e.message}`);
@@ -39,54 +41,77 @@ async function pushToFeishu(title, content) {
 }
 
 async function pushToWechat(title, content) {
-    if (!PUSHPLUS_TOKEN) {
-        console.log('[PushPlus] 未配置 PUSHPLUS_TOKEN，跳过微信推送');
-        return;
-    }
+    if (!PUSHPLUS_TOKEN) return;
     try {
-        console.log(`[PushPlus] 正在推送: ${title}，内容长度: ${content.length}`);
+        console.log(`[PushPlus] 推送: ${title}`);
         await axios.post('http://www.pushplus.plus/send', {
             token: PUSHPLUS_TOKEN,
             title: title,
             content: content,
             template: 'txt'
         }, { timeout: 30000 });
-        console.log(`✅ [PushPlus] [${title}] 发送成功`);
+        console.log(`✅ [PushPlus] [${title}] 成功`);
     } catch (e) {
         console.error(`❌ [PushPlus] [${title}] 失败: ${e.message}`);
     }
 }
 
 async function pushMessage(title, content) {
-    console.log(`[推送] 准备推送: ${title}，内容长度: ${content.length}`);
+    console.log(`[推送] ${title}，长度: ${content.length}`);
     await pushToFeishu(title, content);
     await pushToWechat(title, content);
 }
 
-async function callDeepSeek(prompt, retries = 3) {
+async function callAI(prompt, retries = 2) {
+    if (USE_GITHUB_MODELS) {
+        return await callGitHubModels(prompt);
+    }
+    return await callDeepSeek(prompt, retries);
+}
+
+async function callGitHubModels(prompt) {
+    const res = await axios.post(
+        'https://models.inference.ai.azure.com/chat/completions',
+        {
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: "你是一个专业的内容创作助手。" },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.8,
+            max_tokens: 4000
+        },
+        {
+            headers: { 'Authorization': `Bearer ${GITHUB_TOKEN}`, 'Content-Type': 'application/json' },
+            timeout: 120000
+        }
+    );
+    const content = res.data.choices[0].message.content;
+    if (!content) throw new Error('GitHub Models 返回内容为空');
+    return content;
+}
+
+async function callDeepSeek(prompt, retries = 2) {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
             const res = await axios.post('https://api.deepseek.com/chat/completions', {
                 model: "deepseek-chat",
                 messages: [
-                    { role: "system", content: "你是一个绝不报错、绝不提供虚假链接、文笔极佳的专业内容官。" },
+                    { role: "system", content: "你是一个专业的内容创作助手。" },
                     { role: "user", content: prompt }
                 ],
                 temperature: 0.8
             }, {
                 headers: { 'Authorization': `Bearer ${DEEPSEEK_API_KEY}` },
-                timeout: 600000
+                timeout: 300000
             });
-
             const content = res.data.choices[0].message.content;
             if (!content) throw new Error('DeepSeek 返回内容为空');
             return content;
         } catch (err) {
-            console.error(`[DeepSeek] 第 ${attempt}/${retries} 次请求失败: ${err.message}`);
+            console.error(`[DeepSeek] 第 ${attempt}/${retries} 次失败: ${err.message}`);
             if (attempt === retries) throw err;
-            const wait = attempt * 5000;
-            console.log(`[DeepSeek] 等待 ${wait}ms 后重试...`);
-            await new Promise(r => setTimeout(r, wait));
+            await new Promise(r => setTimeout(r, 5000));
         }
     }
 }
@@ -98,66 +123,94 @@ async function runTask(type) {
 
     if (type === 'ai') {
         title = `今日 AI 科技前沿资讯 (${date})`;
-        prompt = `今天是 ${date}。请总结今日 3 条全球最重大的 AI 动态。
-【极致禁令】：严禁输出任何以 http 或 https 开头的网址链接！
-【内容要求】：每条动态必须包含 [核心事件]、[深度解析]、[行业影响]。总字数不少于 800 字。
-即便无法获取实时新闻，也要基于 2025 年行业大势给出硬核情报。`;
+        prompt = `今天是 ${date}。请写 3 条全球重要的 AI 动态。
+每条包含：[核心事件]、[深度解析]、[行业影响]。
+总字数不少于 500 字。不要输出网址链接。`;
     } else if (type === 'tcm') {
-        title = `小红书·中医人养生策划 (${date})`;
-        prompt = `请策划一篇针对人类（严禁宠物）的春末夏初中医科普+产品带货笔记。
-包含：爆款标题、针对人的症状自测（如乏力、湿重）、中医原理解析、产品植入方案。
-字数要求：详细、深度、总字数在 1000 字左右，符合小红书爆款风格。`;
+        title = `小红书·中医养生爆款图文 (${date})`;
+        prompt = `你是一个小红书爆款内容策划专家。请生成一篇可直接发布的图文笔记。
+
+【主题】春末夏初中医养生
+【要求】
+1. 一个爆款标题（带emoji）
+2. 正文（300-500字）：包含症状自测、中医原理、养生建议
+3. 3-5个标签
+
+格式要求：
+标题：xxx
+---
+正文：xxx
+---
+标签：xxx`;
     } else if (type === 'pet') {
-        title = `小红书·宠物科学养生策划 (${date})`;
-        prompt = `写一篇猫狗换季健康科普+带货笔记。要求：
-- 宠物专属标题
-- 猫狗生理特征解析
-- 鱼油/益生菌产品植入
-- 严禁提到人类
-- 字数 500 字左右`;
+        title = `小红书·宠物爆款图文 (${date})`;
+        prompt = `你是一个小红书宠物领域爆款内容策划专家。请生成一篇可直接发布的图文笔记。
+
+【主题】猫狗换季健康养护
+【要求】
+1. 一个爆款标题（带emoji）
+2. 正文（300-500字）：包含宠物生理特点、换季常见问题、养护建议
+3. 严禁提到人类
+4. 3-5个标签
+
+格式要求：
+标题：xxx
+---
+正文：xxx
+---
+标签：xxx`;
+    } else if (type === 'viral') {
+        title = `小红书/视频号爆款带货分析 (${date})`;
+        prompt = `你是一个社交电商爆款分析专家。请输出以下内容：
+
+【第一部分】当前小红书的爆款类目 Top 5
+- 每个类目说明为什么火
+- 目标人群分析
+
+【第二部分】当前微信视频号爆款类目 Top 5
+- 每个类目说明为什么火
+- 目标人群分析
+
+【第三部分】高成交带货脚本模板
+- 一个通用的爆款带货文案框架
+- 适配小红书风格
+- 适配视频号风格
+
+【第四部分】可直接发布的小红书图文笔记（完整一篇）
+- 爆款标题
+- 正文（含产品植入）
+- 标签
+
+字数不限，越详细越有价值。`;
     }
 
-    console.log(`[${type}] 任务开始。正在请求 DeepSeek API...`);
-    const content = await callDeepSeek(prompt);
-    console.log(`[${type}] DeepSeek 内容生成完毕，长度: ${content.length}。开始推送...`);
+    console.log(`[${type}] 开始生成...`);
+    const content = await callAI(prompt);
+    console.log(`[${type}] 生成完毕，长度: ${content.length}。推送中...`);
     await pushMessage(title, content);
-    console.log(`[${type}] 推送完成。`);
+    console.log(`[${type}] 完成。`);
 }
 
 async function main() {
     const mode = process.argv[2] || 'test';
 
-    try {
-        if (mode === 'test') {
-            console.log("--- 启动手动测试模式 ---");
-            const tasks = [
-                { type: 'ai', delay: 15000 },
-                { type: 'tcm', delay: 15000 },
-                { type: 'pet', delay: 0 }
-            ];
-            for (const task of tasks) {
-                try {
-                    await runTask(task.type);
-                } catch (e) {
-                    console.error(`❌ [${task.type}] 任务失败: ${e.message}`);
-                }
-                if (task.delay > 0) {
-                    console.log(`等待 ${task.delay/1000} 秒后执行下一个任务...`);
-                    await new Promise(r => setTimeout(r, task.delay));
-                }
-            }
-            console.log("--- 手动测试模式结束 ---");
-        } else {
-            const success = await runTask(mode).then(() => true).catch(e => {
-                console.error(`❌ [${mode}] 任务失败: ${e.message}`);
-                return false;
-            });
-            if (!success) process.exit(1);
+    const taskList = mode === 'test'
+        ? ['ai', 'tcm', 'pet', 'viral']
+        : [mode];
+
+    console.log(`--- 启动: ${mode} 模式 ---`);
+    for (let i = 0; i < taskList.length; i++) {
+        try {
+            await runTask(taskList[i]);
+        } catch (e) {
+            console.error(`❌ [${taskList[i]}] 失败: ${e.message}`);
         }
-    } catch (e) {
-        console.error(`❌ 任务执行崩溃: ${e.message}`);
-        process.exit(1);
+        if (i < taskList.length - 1) {
+            console.log('等待 30 秒后执行下一个...');
+            await new Promise(r => setTimeout(r, 30000));
+        }
     }
+    console.log(`--- ${mode} 模式结束 ---`);
 }
 
 main();
