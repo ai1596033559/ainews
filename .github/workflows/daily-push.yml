@@ -27,8 +27,8 @@ jobs:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
         run: node index.js ai
 
-      - name: 等待 15 秒
-        run: sleep 15
+      - name: 等待 60 秒
+        run: sleep 60
 
       - name: 运行 小红书·中医养生
         env:
@@ -36,8 +36,8 @@ jobs:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
         run: node index.js tcm
 
-      - name: 等待 15 秒
-        run: sleep 15
+      - name: 等待 60 秒
+        run: sleep 60
 
       - name: 运行 小红书·宠物科学
         env:
