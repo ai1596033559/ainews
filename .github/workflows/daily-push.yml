@@ -5,19 +5,10 @@ on:
     # 每天早上 8:00 北京时间 (UTC 00:00)
     - cron: '0 0 * * *'
   workflow_dispatch:  # 支持手动触发
-    inputs:
-      mode:
-        description: '运行模式 (ai / tcm / pet / test)'
-        required: false
-        default: 'test'
 
 jobs:
   push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        task: [ai, tcm, pet]
-
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -30,8 +21,26 @@ jobs:
       - name: 安装依赖
         run: npm install
 
-      - name: 运行 ${{ matrix.task }} 任务
+      - name: 运行 AI 科技新闻
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        run: node index.js ${{ matrix.task }}
+        run: node index.js ai
+
+      - name: 等待 15 秒
+        run: sleep 15
+
+      - name: 运行 小红书·中医养生
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+        run: node index.js tcm
+
+      - name: 等待 15 秒
+        run: sleep 15
+
+      - name: 运行 小红书·宠物科学
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+        run: node index.js pet
