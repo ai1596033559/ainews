@@ -38,22 +38,32 @@ async function pushMessage(title, content) {
     }
 }
 
-async function callDeepSeek(prompt) {
-    const res = await axios.post('https://api.deepseek.com/chat/completions', {
-        model: "deepseek-chat",
-        messages: [
-            { role: "system", content: "你是一个绝不报错、绝不提供虚假链接、文笔极佳的专业内容官。" },
-            { role: "user", content: prompt }
-        ],
-        temperature: 0.8
-    }, {
-        headers: { 'Authorization': `Bearer ${DEEPSEEK_API_KEY}` },
-        timeout: 240000
-    });
+async function callDeepSeek(prompt, retries = 3) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const res = await axios.post('https://api.deepseek.com/chat/completions', {
+                model: "deepseek-chat",
+                messages: [
+                    { role: "system", content: "你是一个绝不报错、绝不提供虚假链接、文笔极佳的专业内容官。" },
+                    { role: "user", content: prompt }
+                ],
+                temperature: 0.8
+            }, {
+                headers: { 'Authorization': `Bearer ${DEEPSEEK_API_KEY}` },
+                timeout: 300000
+            });
 
-    const content = res.data.choices[0].message.content;
-    if (!content) throw new Error('DeepSeek 返回内容为空');
-    return content;
+            const content = res.data.choices[0].message.content;
+            if (!content) throw new Error('DeepSeek 返回内容为空');
+            return content;
+        } catch (err) {
+            console.error(`[DeepSeek] 第 ${attempt}/${retries} 次请求失败: ${err.message}`);
+            if (attempt === retries) throw err;
+            const wait = attempt * 5000;
+            console.log(`[DeepSeek] 等待 ${wait}ms 后重试...`);
+            await new Promise(r => setTimeout(r, wait));
+        }
+    }
 }
 
 async function runTask(type) {
