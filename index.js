@@ -75,7 +75,7 @@ async function callDeepSeek(prompt, retries = 3) {
                 temperature: 0.8
             }, {
                 headers: { 'Authorization': `Bearer ${DEEPSEEK_API_KEY}` },
-                timeout: 300000
+                timeout: 600000
             });
 
             const content = res.data.choices[0].message.content;
@@ -109,9 +109,12 @@ async function runTask(type) {
 字数要求：详细、深度、总字数在 1000 字左右，符合小红书爆款风格。`;
     } else if (type === 'pet') {
         title = `小红书·宠物科学养生策划 (${date})`;
-        prompt = `请策划一篇针对猫狗换季健康的科普+带货笔记。
-包含：宠物专属标题、猫狗生理特征解析、鱼油/益生菌产品植入。
-要求：严禁提到人类！内容极度专业，总字数在 1000 字左右。`;
+        prompt = `写一篇猫狗换季健康科普+带货笔记。要求：
+- 宠物专属标题
+- 猫狗生理特征解析
+- 鱼油/益生菌产品植入
+- 严禁提到人类
+- 字数 500 字左右`;
     }
 
     console.log(`[${type}] 任务开始。正在请求 DeepSeek API...`);
