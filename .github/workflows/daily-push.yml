@@ -6,10 +6,15 @@ on:
     - cron: '0 1 * * *'   # 09:00 北京时间 - 中医养生
     - cron: '0 2 * * *'   # 10:00 北京时间 - 宠物科学
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '运行模式 (ai / tcm / pet / test)'
+        required: false
+        default: 'test'
 
 jobs:
   ai-news:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 0 * * *'
+    if: github.event.schedule == '0 0 * * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +28,7 @@ jobs:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
 
   tcm-health:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 1 * * *'
+    if: github.event.schedule == '0 1 * * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +42,7 @@ jobs:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
 
   pet-science:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 2 * * *'
+    if: github.event.schedule == '0 2 * * *'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +51,20 @@ jobs:
           node-version: 20
       - run: npm install
       - run: node index.js pet
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+
+  manual-test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: node index.js ${{ github.event.inputs.mode }}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
